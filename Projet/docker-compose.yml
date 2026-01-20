@@ -1,0 +1,52 @@
+version: '3.7'
+
+volumes:
+  kafka_data:
+
+services:
+  # 1. Kafka Broker (using KRaft mode)
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    ports:
+      # EXTERNAL: Host connects to container on 9094
+      - "9094:9094"
+    environment:
+      # --- KRaft Configuration ---
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      
+      # Define Listeners
+      # INTERNAL: For communication inside Docker network (kafka:29092)
+      # EXTERNAL: For communication from your host machine (localhost:9094)
+      # CONTROLLER: For KRaft controller communication
+      KAFKA_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://0.0.0.0:9094,CONTROLLER://kafka:9093
+      
+      # Advertised Listeners (How clients find the broker)
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9094
+      
+      # Security Mapping
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      
+      # --- General Configuration ---
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    
+    # Command to format storage and run KRaft
+    command:
+      - /bin/bash
+      - -c
+      - |
+        # Generate a Cluster ID if one doesn't exist
+        if [ ! -f /var/lib/kafka/data/meta.properties ]; then
+          CLUSTER_ID=$$(/usr/bin/kafka-storage random-uuid);
+          /usr/bin/kafka-storage format -t $$CLUSTER_ID -c /etc/kafka/config/kraft/server.properties;
+        fi
+        /etc/confluent/docker/run
+        
+    volumes:
+      - kafka_data:/var/lib/kafka/data
