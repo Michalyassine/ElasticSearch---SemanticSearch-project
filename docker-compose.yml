@@ -6,47 +6,49 @@ volumes:
 
 services:
 
-  # 1. Kafka Broker (KRaft Mode)
+  # 1. Kafka Broker (KRaft Mode - Fixed)
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: kafka
     ports:
-      # EXTERNAL: Host connects to container on 9094
       - "9094:9094"
     environment:
-      # --- KRaft Configuration ---
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      
-      # Define Listeners
-      # INTERNAL: For communication inside Docker (kafka:29092) -> Used by Logstash
-      # EXTERNAL: For communication from your host machine (localhost:9094) -> Used by Python scripts
-      # CONTROLLER: For KRaft controller communication
       KAFKA_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://0.0.0.0:9094,CONTROLLER://kafka:9093
-      
-      # Advertised Listeners
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9094
-      
-      # Security Mapping
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      
-      # --- General Configuration ---
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk" 
+      # Adding a fixed CLUSTER_ID helps prevent re-formatting errors on restart
     
-    # Command to format storage and run KRaft
+    # HEALTHCHECK: Tells Docker that Kafka is only "healthy" when it responds to scripts
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server=localhost:9094"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+    # More robust command to handle storage formatting
     command:
       - /bin/bash
       - -c
       - |
+        # 1. Check if the data directory exists and is formatted
         if [ ! -f /var/lib/kafka/data/meta.properties ]; then
-          CLUSTER_ID=$$(/usr/bin/kafka-storage random-uuid);
-          /usr/bin/kafka-storage format -t $$CLUSTER_ID -c /etc/kafka/config/kraft/server.properties;
+          echo "Storage not found. Formatting cluster..."
+          # Use the ENV var CLUSTER_ID if set, otherwise generate one
+          CLUSTER_ID=${CLUSTER_ID:-$$(/usr/bin/kafka-storage random-uuid)}
+          /usr/bin/kafka-storage format -t $$CLUSTER_ID -c /etc/kafka/config/kraft/server.properties
+        else
+          echo "Storage found. Skipping format."
         fi
+        # 2. Start Kafka
         /etc/confluent/docker/run
         
     volumes:
@@ -59,11 +61,11 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.10.2
     container_name: elasticsearch
     environment:
-      # Required for single-node development
       discovery.type: single-node
-      # Disable security for development simplicity
       xpack.security.enabled: false 
       ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      # Disable ML to save RAM if not needed for this step
+      xpack.ml.enabled: false
     ulimits:
       memlock:
         soft: -1
@@ -80,11 +82,12 @@ services:
     image: docker.elastic.co/logstash/logstash:8.10.2
     container_name: logstash
     depends_on:
-      - elasticsearch
-      - kafka
+      # Wait for Kafka to be healthy, not just "started"
+      kafka:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_started
     volumes:
-      # Mount the logstash pipeline configuration
-      # Ensure you have a folder 'config' with 'logstash.conf' inside it at the project root
       - ./config/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
     ports:
       - "9600:9600"
@@ -98,9 +101,9 @@ services:
     image: docker.elastic.co/kibana/kibana:8.10.2
     container_name: kibana
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_started
     ports:
       - "5601:5601"
     environment:
-      # Connect Kibana to Elasticsearch's internal hostname/port
       ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
