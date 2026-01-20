@@ -62,7 +62,7 @@ services:
     container_name: elasticsearch
     environment:
       discovery.type: single-node
-      xpack.security.enabled: false 
+      xpack.security.enabled: false
       ES_JAVA_OPTS: "-Xms512m -Xmx512m"
       # Disable ML to save RAM if not needed for this step
       xpack.ml.enabled: false

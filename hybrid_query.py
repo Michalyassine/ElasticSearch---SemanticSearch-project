@@ -53,18 +53,21 @@ def setup_vector_store(embeddings):
 
 def setup_elasticsearch():
     """Initialize Elasticsearch Client (Syntaxic)."""
-    try:
+    # try:
         # Connect to the local Elasticsearch container
-        es = Elasticsearch("http://localhost:9200")
-        if es.ping():
-            print("Connected to Elasticsearch.")
-            return es
-        else:
-            print("Could not ping Elasticsearch.")
-            return None
-    except Exception as e:
-        print(f"Error connecting to Elasticsearch: {e}")
-        return None
+    es = Elasticsearch("http://localhost:9200")
+    #     if es.ping():
+    #         print("Connected to Elasticsearch.")
+    #         return es
+    #     else:
+    #         print("Could not ping Elasticsearch.")
+    #         return None
+    # except Exception as e:
+    #     print(f"Error connecting to Elasticsearch: {e}")
+    #     return None
+    es.info()  # Test connection
+    print("Connected to Elasticsearch.")
+    return es
 
 # ==========================================
 # 2. SEARCH ENGINES
